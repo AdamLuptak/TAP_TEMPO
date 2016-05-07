@@ -3,20 +3,20 @@
 
 #define OUT_PIN 3
 #define INPUT_PIN 2
-#define OUTPUT_LED 13
 #define INTERRUPT_NUMBER 0
 
-const int debounceDelay = 150;
+const int debounceDelay = 200;
 volatile int tapCount = 0;
 const int tempoCountConst = 4;
 float cas = 15.624;
+float casSec = 15624;
 int counterForDelay = 0;
 volatile int turnOnDelayInterval = 600;
 volatile boolean turnOnSequence = false;
 volatile int sequenceCounter = 0;
-long tempos[10];
+long tempos[4];
 long timeNow = 0;
-long timeForPause = 5000;
+long timeForPause = 2000;
 volatile long timePre = 0;
 
 void delayBetweenTapsProtection();
@@ -43,17 +43,15 @@ void setup() {
 
     setupWatchDog();
 
-    Serial.println("Can't get here");
-
+    Serial.println("Finished setup");
 
 }
 
 void setupSerial() { Serial.begin(9600); }
 
 void setupPins() {
-    pinMode(OUTPUT_LED, OUTPUT);
     pinMode(OUT_PIN, OUTPUT);
-    pinMode(INPUT_PIN, INPUT);
+   // pinMode(INPUT_PIN, INPUT);
 }
 
 void setupWatchDog() { wdt_enable(WDTO_1S); }
@@ -82,10 +80,10 @@ ISR(TIMER1_COMPA_vect) {//timer1 interrupt 1Hz toggles pin 13 (LED)/*
     if (turnOnSequence) {
         if (sequenceCounter == 6) {
             sequenceCounter = 0;
+            tapCount = 0;
             turnOnSequence = false;
         } else {
             (counterForDelay < turnOnDelayInterval / 2) ? (PORTD = 0b0001000) : (PORTD = 0b0000000);
-            (counterForDelay < turnOnDelayInterval / 2) ? (PORTB = 0b0100000) : (PORTB = 0b0000000);
             counterForDelay = counterForDelay + 1;
             if (counterForDelay == turnOnDelayInterval) {
                 counterForDelay = 0;
@@ -93,6 +91,7 @@ ISR(TIMER1_COMPA_vect) {//timer1 interrupt 1Hz toggles pin 13 (LED)/*
             }
         }
     }
+    wdt_reset();
 }
 
 int calculateInterval() {
@@ -100,9 +99,9 @@ int calculateInterval() {
     for (int i = 0; i < tempoCountConst / 2; ++i) {
         countTempos += tempos[i + 1] - tempos[i];
     }
-    int avarage = countTempos / 2; //1/4 notes
-    avarage = (avarage / 4) * 3;
-    return avarage;
+    int avrage = countTempos / 2; //1/4 notes
+    avrage = (avrage / 4) * 3;
+    return avrage;
 }
 
 void tapDetect() {
@@ -111,12 +110,11 @@ void tapDetect() {
     // If interrupts come faster than 200ms, assume it's a bounce and ignore
     if (interrupt_time - last_interrupt_time > debounceDelay) {
         if (tapCount < tempoCountConst) {
-            timePre = interrupt_time;
             tempos[tapCount] = interrupt_time;
+            timePre = interrupt_time;
             tapCount++;
         }
         if (tapCount == tempoCountConst) {
-            tapCount = 0;
             turnOnDelayInterval = calculateInterval();
             turnOnSequence = true;
         }
@@ -126,16 +124,25 @@ void tapDetect() {
 
 void loop() {
     delayBetweenTapsProtection();
-    //Protection
-    wdt_reset();
+//    for (int i = 0; i <4; ++i) {
+//        Serial.print(" ");
+//        Serial.print(tempos[i] );
+//    }
+//    Serial.println(" end of tempos");
+    Serial.println(tapCount);
+
 }
 
 void delayBetweenTapsProtection() {
     timeNow = millis();
-    if (tapCount != 0) {
-        if (timeNow - timePre > timeForPause) {
-            tapCount = 0;
+    if (tapCount > 0) {
+        if (timeNow - timePre >= timeForPause) {
             timePre = timeNow;
+            tapCount = 0;
+            //timePre = timeNow;
+            turnOnSequence = false;
+            sequenceCounter = 0;
+            Serial.println("reset");
         }
     }
 }
