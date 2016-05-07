@@ -1,7 +1,8 @@
 #include <Arduino.h>
+#include <avr/wdt.h>
 
-#define OUTPIN 3
-#define INPUTPIN 2
+#define OUT_PIN 3
+#define INPUT_PIN 2
 #define OUTPUT_LED 13
 #define INTERRUPT_NUMBER 0
 
@@ -9,24 +10,57 @@ const int debounceDelay = 150;
 volatile int tapCount = 0;
 const int tempoCountConst = 4;
 float cas = 15.624;
-int pocitadlo = 0;
-volatile int zapni = 600;
+int counterForDelay = 0;
+volatile int turnOnDelayInterval = 600;
 volatile boolean turnOnSequence = false;
 volatile int sequenceCounter = 0;
 long tempos[10];
-long  timeNow =0;
+long timeNow = 0;
 long timeForPause = 5000;
 volatile long timePre = 0;
 
+void delayBetweenTapsProtection();
+
+void setupTimer();
+
+void setupInterruptRoutin();
+
+void setupWatchDog();
+
+void setupPins();
+
+void setupSerial();
+
 void setup() {
-    Serial.begin(9600);
 
+    setupSerial();
+
+    setupPins();
+
+    setupInterruptRoutin();
+
+    setupTimer();
+
+    setupWatchDog();
+
+    Serial.println("Can't get here");
+
+
+}
+
+void setupSerial() { Serial.begin(9600); }
+
+void setupPins() {
     pinMode(OUTPUT_LED, OUTPUT);
-    pinMode(INPUTPIN, INPUT);
+    pinMode(OUT_PIN, OUTPUT);
+    pinMode(INPUT_PIN, INPUT);
+}
 
-    attachInterrupt(INTERRUPT_NUMBER, tapDetect, HIGH);
+void setupWatchDog() { wdt_enable(WDTO_1S); }
 
-    cli();
+void setupInterruptRoutin() { attachInterrupt(INTERRUPT_NUMBER, tapDetect, HIGH); }
+
+void setupTimer() {
     TCCR1A = 0;// set entire TCCR1A register to 0
     TCCR1B = 0;// same for TCCR1B
     TCNT1 = 0;//initialize counter value to 0
@@ -38,30 +72,27 @@ void setup() {
     TCCR1B |= (1 << CS12) | (1 << CS10);
     // enable timer compare interrupt
     TIMSK1 |= (1 << OCIE1A);
-    sei();
 }
-
 
 ISR(TIMER1_COMPA_vect) {//timer1 interrupt 1Hz toggles pin 13 (LED)/*
 //generates pulse wave of frequency 1Hz/2 = 0.5kHz (takes two cycles for full wave- toggle high then toggle low)
 //compare match register = [ 16,000,000Hz/ (prescaler * desired interrupt frequency) ] - 1
 //compare match register = [16,000,000 / (1024 * 1) ] -1
 //= 15,624 pre  1ms, 14,625
-    cli();
     if (turnOnSequence) {
         if (sequenceCounter == 6) {
             sequenceCounter = 0;
             turnOnSequence = false;
         } else {
-            (pocitadlo < zapni / 2) ? (PORTB = 0b0100000) : (PORTB = 0b0000000);
-            pocitadlo = pocitadlo + 1;
-            if (pocitadlo == zapni) {
-                pocitadlo = 0;
+            (counterForDelay < turnOnDelayInterval / 2) ? (PORTD = 0b0001000) : (PORTD = 0b0000000);
+            (counterForDelay < turnOnDelayInterval / 2) ? (PORTB = 0b0100000) : (PORTB = 0b0000000);
+            counterForDelay = counterForDelay + 1;
+            if (counterForDelay == turnOnDelayInterval) {
+                counterForDelay = 0;
                 sequenceCounter++;
             }
         }
     }
-    sei();
 }
 
 int calculateInterval() {
@@ -86,7 +117,7 @@ void tapDetect() {
         }
         if (tapCount == tempoCountConst) {
             tapCount = 0;
-            zapni = calculateInterval();
+            turnOnDelayInterval = calculateInterval();
             turnOnSequence = true;
         }
     }
@@ -94,11 +125,16 @@ void tapDetect() {
 }
 
 void loop() {
+    delayBetweenTapsProtection();
+    //Protection
+    wdt_reset();
+}
+
+void delayBetweenTapsProtection() {
     timeNow = millis();
-    if(tapCount != 0){
-        if(timeNow - timePre > timeForPause){
-                Serial.println("nulujem");
-                tapCount = 0;
+    if (tapCount != 0) {
+        if (timeNow - timePre > timeForPause) {
+            tapCount = 0;
             timePre = timeNow;
         }
     }
