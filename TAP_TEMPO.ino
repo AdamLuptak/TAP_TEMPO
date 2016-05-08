@@ -64,7 +64,7 @@ int calculateInterval() {
     }
     int average = countTempos / 2; //1/4 notes
     average = (average / 4) * 3;
-    return average - delaHigLow;
+    return average;
 }
 
 void tapDetect() {
